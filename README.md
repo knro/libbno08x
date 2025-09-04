@@ -93,6 +93,81 @@ add_executable(MyExecutable main.cpp)
 target_link_libraries(MyExecutable PRIVATE BNO08x::bno08x)
 ```
 
+## Getting Sensor Data
+
+To get sensor data, you first need to enable the desired sensor reports, and then continuously poll for new sensor events.
+
+### 1. Enable Sensor Reports
+
+Use the `enableReport` function to start receiving data from a sensor. You can enable multiple sensors. The function takes the sensor ID and an optional report interval in microseconds.
+
+```cpp
+#include "BNO08x.h"
+
+BNO08x imu;
+// ... initialize with begin_i2c or begin_spi ...
+
+// Enable the rotation vector sensor
+if (!imu.enableReport(SH2_ROTATION_VECTOR)) {
+    std::cerr << "Could not enable rotation vector" << std::endl;
+}
+
+// Enable the accelerometer
+if (!imu.enableReport(SH2_ACCELEROMETER, 5000)) { // 5ms interval
+    std::cerr << "Could not enable accelerometer" << std::endl;
+}
+```
+
+### 2. Poll for Sensor Events
+
+After enabling the reports, you can get the sensor data by calling `getSensorEvent` in a loop. This function will return `true` when a new event is available.
+
+The `sh2_SensorValue_t` struct contains the sensor data. You should use a `switch` statement on the `sensorId` field to determine which sensor the data is from, and then access the data through the `un` union.
+
+```cpp
+#include <iostream>
+#include "BNO08x.h"
+
+// ... initialize and enable reports ...
+
+sh2_SensorValue_t sensorValue;
+
+while (true) {
+    if (imu.getSensorEvent(&sensorValue)) {
+        switch (sensorValue.sensorId) {
+            case SH2_ROTATION_VECTOR:
+                std::cout << "Rotation Vector - R: " << sensorValue.un.rotationVector.real
+                          << ", i: " << sensorValue.un.rotationVector.i
+                          << ", j: " << sensorValue.un.rotationVector.j
+                          << ", k: " << sensorValue.un.rotationVector.k << std::endl;
+                break;
+            case SH2_ACCELEROMETER:
+                std::cout << "Accelerometer - x: " << sensorValue.un.accelerometer.x
+                          << ", y: " << sensorValue.un.accelerometer.y
+                          << ", z: " << sensorValue.un.accelerometer.z << std::endl;
+                break;
+        }
+    }
+}
+```
+
+### Available Sensors
+
+Here is a list of some of the available sensors and their corresponding data structures in the `sh2_SensorValue_t` union:
+
+| Sensor ID                       | Data Structure Member | Description                           |
+| ------------------------------- | --------------------- | ------------------------------------- |
+| `SH2_ACCELEROMETER`             | `accelerometer`       | Calibrated accelerometer data (m/s²)  |
+| `SH2_GYROSCOPE_CALIBRATED`      | `gyroscope`           | Calibrated gyroscope data (rad/s)     |
+| `SH2_MAGNETIC_FIELD_CALIBRATED` | `magneticField`       | Calibrated magnetometer data (µT)     |
+| `SH2_ROTATION_VECTOR`           | `rotationVector`      | Fused rotation vector (quaternion)    |
+| `SH2_LINEAR_ACCELERATION`       | `linearAcceleration`  | Linear acceleration (gravity removed) |
+| `SH2_GRAVITY`                   | `gravity`             | Gravity vector                        |
+| `SH2_TEMPERATURE`               | `temperature`         | Ambient temperature (°C)              |
+| `SH2_PRESSURE`                  | `pressure`            | Atmospheric pressure (hPa)            |
+
+For a complete list of sensors, please refer to the `sh2_SensorId_e` enum in `src/sh2.h`.
+
 ## License
 
 This project is licensed under the terms of the MIT license. See the `license.txt` file for details.
