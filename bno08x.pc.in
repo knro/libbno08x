@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: bno08x
+Description: C++ library for the BNO08x IMU
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lbno08x
+Cflags: -I${includedir}
+Requires: libgpiodcxx
