@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(bno08x LANGUAGES C CXX VERSION 0.0.1)
 
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBGPIOD REQUIRED libgpiodcxx)
+find_package(GPIOD REQUIRED)
 
 if (LIBGPIOD_VERSION VERSION_GREATER_EQUAL "2.0")
   add_definitions(-DHAVE_LIBGPIOD_V2)
@@ -39,7 +39,7 @@ install(TARGETS bno08x
 include(CMakePackageConfigHelpers)
 configure_package_config_file(BNO08xConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/BNO08xConfig.cmake"
-    INSTALL_DESTINATION "${CMAKE_INSTALL_DATADIR}/cmake/BNO08x"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/BNO08x"
 )
 
 write_basic_package_version_file(
@@ -51,14 +51,14 @@ write_basic_package_version_file(
 install(EXPORT BNO08xTargets
     FILE BNO08xTargets.cmake
     NAMESPACE BNO08x::
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/BNO08x
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/BNO08x
 )
 
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/BNO08xConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/BNO08xConfigVersion.cmake"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/cmake/BNO08x"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/BNO08x"
 )
 
 configure_file(bno08x.pc.in bno08x.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/bno08x.pc DESTINATION ${CMAKE_INSTALL_DATADIR}/pkgconfig)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/bno08x.pc DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pkgconfig)
