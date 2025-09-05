@@ -98,6 +98,23 @@ void BNO08x::begin_i2c(uint8_t i2c_addr, const char* i2c_bus)
     }
 }
 
+void BNO08x::begin_i2c(int devFd)
+{
+    m_Mode = MODE_I2C;
+    m_DevFd = devFd;
+    m_Hal.open = hal_open_wrapper;
+    m_Hal.close = hal_close_wrapper;
+    m_Hal.read = hal_read_wrapper;
+    m_Hal.write = hal_write_wrapper;
+    m_Hal.getTimeUs = hal_getTimeUs_wrapper;
+    m_Hal.self = this;
+
+    if (!_init())
+    {
+        throw BNO08x_exception("Failed to initialize BNO08x with external file descriptor.");
+    }
+}
+
 void BNO08x::begin_spi(const char* spi_device, int cs_pin, int int_pin)
 {
     m_Mode = MODE_SPI;
@@ -315,7 +332,7 @@ int BNO08x::hal_read(uint8_t *pBuffer, unsigned len, uint32_t *t_us)
     {
         if (!m_InitialAdvertConsumed && m_InitialAdvertLen > 0)
         {
-            size_t copy_len = (m_InitialAdvertLen < len) ? m_InitialAdvertLen : len;
+            size_t copy_len = (static_cast<size_t>(m_InitialAdvertLen) < len) ? static_cast<size_t>(m_InitialAdvertLen) : len;
             memcpy(pBuffer, m_InitialAdvertData, copy_len);
             m_InitialAdvertConsumed = true;
             *t_us = hal_getTimeUs();
@@ -373,8 +390,8 @@ int BNO08x::hal_write(uint8_t *pBuffer, unsigned len)
 {
     if (m_Mode == MODE_I2C)
     {
-        int ret = write(m_DevFd, pBuffer, len);
-        if (ret != len)
+        ssize_t ret = write(m_DevFd, pBuffer, len);
+        if (ret < 0 || static_cast<unsigned>(ret) != len)
         {
             return 0;
         }

@@ -57,6 +57,12 @@ class BNO08x
         void begin_i2c(uint8_t i2c_addr = 0x4A, const char* i2c_bus = "/dev/i2c-1");
 
         /**
+         * @brief Initialize the BNO08x with I2C communication using an externally opened file descriptor.
+         * @param devFd The file descriptor of the opened I2C bus.
+         */
+        void begin_i2c(int devFd);
+
+        /**
          * @brief Initialize the BNO08x with SPI communication.
          * @param spi_device The SPI device path.
          * @param cs_pin The GPIO pin number for the chip select pin. -1 if not used.

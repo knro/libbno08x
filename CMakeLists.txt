@@ -15,7 +15,12 @@ endif()
 
 # Add the library source files
 add_library(bno08x SHARED src/BNO08x.cpp src/sh2.c src/shtp.c src/sh2_SensorValue.c src/sh2_util.c)
-target_include_directories(bno08x PRIVATE src)
+
+target_include_directories(bno08x PUBLIC 
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/bno08x>
+)
+
 target_link_libraries(bno08x PUBLIC ${LIBGPIOD_LIBRARIES})
 target_compile_options(bno08x PRIVATE -Wall -Wextra -pedantic)
 
