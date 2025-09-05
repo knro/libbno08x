@@ -14,17 +14,21 @@ if (LIBGPIOD_VERSION VERSION_GREATER_EQUAL "2.0")
 endif()
 
 # Add the library source files
-include_directories(src)
 add_library(bno08x SHARED src/BNO08x.cpp src/sh2.c src/shtp.c src/sh2_SensorValue.c src/sh2_util.c)
+target_include_directories(bno08x PRIVATE src)
 target_link_libraries(bno08x PUBLIC ${LIBGPIOD_LIBRARIES})
+target_compile_options(bno08x PRIVATE -Wall -Wextra -pedantic)
+
 set_target_properties(bno08x PROPERTIES
     PUBLIC_HEADER "src/BNO08x.h;src/sh2.h;src/sh2_err.h;src/sh2_hal.h;src/sh2_SensorValue.h;src/sh2_util.h;src/shtp.h"
     VERSION ${PROJECT_VERSION}
     SOVERSION 0)
 
-# Example executable
-add_executable(rotation_vector_example examples/rotation_vector.cpp)
-target_link_libraries(rotation_vector_example bno08x)
+# Example executables
+add_executable(i2c_test_example examples/i2c_test.cpp)
+target_include_directories(i2c_test_example PRIVATE src)
+target_link_libraries(i2c_test_example bno08x)
+
 
 install(TARGETS bno08x
     EXPORT BNO08xTargets

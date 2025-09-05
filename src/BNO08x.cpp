@@ -17,167 +17,184 @@
 #include "BNO08x.h"
 #include "sh2_err.h"
 #include <iostream>
-#include <string.h>
-#include <time.h>
+#include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
-#ifdef HAVE_LIBGPIOD_V2
 #include <gpiod.hpp>
-#else
-#include <gpiod.h>
-#endif
+#include <cstdio>
+#include <cerrno>
+#include <linux/i2c.h>
 
-// Placeholder for I2C/SPI device handle
-static int dev_fd = -1;
-
-BNO08x::BNO08x(int reset_pin) : _reset_pin(reset_pin), _reset_occurred(false)
+BNO08x::BNO08x(int reset_pin) : m_ResetPin(reset_pin), m_ResetOccurred(false),
+    m_InitialAdvertLen(0), m_InitialAdvertConsumed(false), m_DevFd(-1)
 {
 }
 
 BNO08x::~BNO08x()
 {
-    if (dev_fd != -1)
+    if (m_DevFd != -1)
     {
-        hal_close(&_hal);
+        hal_close();
     }
 }
 
-bool BNO08x::begin_i2c(uint8_t i2c_addr, const char* i2c_bus)
+// Wrapper functions to provide a C-style interface for the sh2 library
+int hal_open_wrapper(sh2_Hal_t *self)
 {
-    _mode = MODE_I2C;
-    _hal.open = hal_open;
-    _hal.close = hal_close;
-    _hal.read = hal_read;
-    _hal.write = hal_write;
-    _hal.getTimeUs = hal_getTimeUs;
-
-    dev_fd = open(i2c_bus, O_RDWR);
-    if (dev_fd < 0)
-    {
-        return false;
-    }
-
-    if (ioctl(dev_fd, I2C_SLAVE, i2c_addr) < 0)
-    {
-        close(dev_fd);
-        dev_fd = -1;
-        return false;
-    }
-
-    return _init();
+    return static_cast<BNO08x*>(self->self)->hal_open();
 }
 
-bool BNO08x::begin_spi(const char* spi_device, int cs_pin, int int_pin)
+void hal_close_wrapper(sh2_Hal_t *self)
 {
-    _mode = MODE_SPI;
-    _cs_pin = cs_pin;
-    _int_pin = int_pin;
+    static_cast<BNO08x*>(self->self)->hal_close();
+}
 
-    _hal.open = hal_open;
-    _hal.close = hal_close;
-    _hal.read = hal_read;
-    _hal.write = hal_write;
-    _hal.getTimeUs = hal_getTimeUs;
+int hal_read_wrapper(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us)
+{
+    return static_cast<BNO08x*>(self->self)->hal_read(pBuffer, len, t_us);
+}
 
-    dev_fd = open(spi_device, O_RDWR);
-    if (dev_fd < 0)
+int hal_write_wrapper(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len)
+{
+    return static_cast<BNO08x*>(self->self)->hal_write(pBuffer, len);
+}
+
+uint32_t hal_getTimeUs_wrapper(sh2_Hal_t *self)
+{
+    return static_cast<BNO08x*>(self->self)->hal_getTimeUs();
+}
+
+void BNO08x::begin_i2c(uint8_t i2c_addr, const char* i2c_bus)
+{
+    m_Mode = MODE_I2C;
+    m_I2cAddr = i2c_addr;
+    m_Hal.open = hal_open_wrapper;
+    m_Hal.close = hal_close_wrapper;
+    m_Hal.read = hal_read_wrapper;
+    m_Hal.write = hal_write_wrapper;
+    m_Hal.getTimeUs = hal_getTimeUs_wrapper;
+    m_Hal.self = this;
+
+    m_DevFd = open(i2c_bus, O_RDWR);
+    if (m_DevFd < 0)
     {
-        return false;
+        throw BNO08x_exception("Failed to open I2C bus: " + std::string(i2c_bus));
+    }
+
+    if (ioctl(m_DevFd, I2C_SLAVE, i2c_addr) < 0)
+    {
+        close(m_DevFd);
+        m_DevFd = -1;
+        throw BNO08x_exception("Failed to set I2C slave address: " + std::to_string(i2c_addr));
+    }
+
+    if (!_init())
+    {
+        throw BNO08x_exception("Failed to initialize BNO08x.");
+    }
+}
+
+void BNO08x::begin_spi(const char* spi_device, int cs_pin, int int_pin)
+{
+    m_Mode = MODE_SPI;
+    m_CsPin = cs_pin;
+    m_IntPin = int_pin;
+
+    m_Hal.open = hal_open_wrapper;
+    m_Hal.close = hal_close_wrapper;
+    m_Hal.read = hal_read_wrapper;
+    m_Hal.write = hal_write_wrapper;
+    m_Hal.getTimeUs = hal_getTimeUs_wrapper;
+    m_Hal.self = this;
+
+    m_DevFd = open(spi_device, O_RDWR);
+    if (m_DevFd < 0)
+    {
+        throw BNO08x_exception("Failed to open SPI device: " + std::string(spi_device));
     }
 
     uint8_t mode = SPI_MODE_3;
-    if (ioctl(dev_fd, SPI_IOC_WR_MODE, &mode) < 0)
+    if (ioctl(m_DevFd, SPI_IOC_WR_MODE, &mode) < 0)
     {
-        close(dev_fd);
-        dev_fd = -1;
-        return false;
+        close(m_DevFd);
+        m_DevFd = -1;
+        throw BNO08x_exception("Failed to set SPI mode.");
     }
 
     uint8_t bpw = 8;
-    if (ioctl(dev_fd, SPI_IOC_WR_BITS_PER_WORD, &bpw) < 0)
+    if (ioctl(m_DevFd, SPI_IOC_WR_BITS_PER_WORD, &bpw) < 0)
     {
-        close(dev_fd);
-        dev_fd = -1;
-        return false;
+        close(m_DevFd);
+        m_DevFd = -1;
+        throw BNO08x_exception("Failed to set SPI bits per word.");
     }
 
     uint32_t speed = 3000000;
-    if (ioctl(dev_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0)
+    if (ioctl(m_DevFd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0)
     {
-        close(dev_fd);
-        dev_fd = -1;
-        return false;
+        close(m_DevFd);
+        m_DevFd = -1;
+        throw BNO08x_exception("Failed to set SPI max speed.");
     }
 
-    return _init();
+    if (!_init())
+    {
+        throw BNO08x_exception("Failed to initialize BNO08x.");
+    }
+}
+
+namespace
+{
+void gpio_set_value(int pin, int value)
+{
+#ifdef HAVE_LIBGPIOD_V2
+    gpiod::chip chip("/dev/gpiochip0");
+    auto request = chip.prepare_request()
+                   .set_consumer("BNO08x")
+                   .add_line_settings(pin,
+                                      gpiod::line_settings()
+                                      .set_direction(gpiod::line::direction::OUTPUT)
+                                      .set_output_value(static_cast<gpiod::line::value>(value)))
+                   .do_request();
+    usleep(10000);
+    request.release();
+#else
+    gpiod::chip chip("/dev/gpiochip0", gpiod::chip::OPEN_BY_PATH);
+    gpiod::line line = chip.get_line(pin);
+    line.request({ "bno08x-reset", gpiod::line_request::DIRECTION_OUTPUT }, value);
+    usleep(10000);
+    line.release();
+#endif
+}
 }
 
 void BNO08x::hardwareReset()
 {
-    if (_reset_pin == -1)
+    if (m_ResetPin == -1)
     {
         return;
     }
 
-#ifdef HAVE_LIBGPIOD_V2
     try
     {
-        gpiod::chip chip("/dev/gpiochip0");
-        auto request = chip.prepare_request()
-                       .set_consumer("BNO08x")
-                       .add_line_settings(_reset_pin,
-                                          gpiod::line_settings()
-                                          .set_direction(gpiod::line::direction::OUTPUT)
-                                          .set_output_value(gpiod::line::value::ACTIVE))
-                       .do_request();
-
-        usleep(10000);
-        request.set_value(_reset_pin, gpiod::line::value::INACTIVE);
-        usleep(10000);
-        request.set_value(_reset_pin, gpiod::line::value::ACTIVE);
-        usleep(10000);
-        request.release();
+        gpio_set_value(m_ResetPin, 1);
+        gpio_set_value(m_ResetPin, 0);
+        gpio_set_value(m_ResetPin, 1);
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         std::cerr << "Failed to reset BNO08x via GPIO: " << e.what() << std::endl;
     }
-#else
-    struct gpiod_chip *chip;
-    struct gpiod_line *line;
-
-    chip = gpiod_chip_open_by_number(0);
-    if (!chip)
-    {
-        return;
-    }
-
-    line = gpiod_chip_get_line(chip, _reset_pin);
-    if (!line)
-    {
-        gpiod_chip_close(chip);
-        return;
-    }
-
-    gpiod_line_request_output(line, "bno08x-reset", 1);
-    usleep(10000);
-    gpiod_line_set_value(line, 0);
-    usleep(10000);
-    gpiod_line_set_value(line, 1);
-    usleep(10000);
-
-    gpiod_line_release(line);
-    gpiod_chip_close(chip);
-#endif
 }
 
 bool BNO08x::wasReset()
 {
-    bool r = _reset_occurred;
-    _reset_occurred = false;
+    bool r = m_ResetOccurred;
+    m_ResetOccurred = false;
     return r;
 }
 
@@ -207,7 +224,7 @@ bool BNO08x::enableReport(sh2_SensorId_t sensor, uint32_t interval_us)
 
 bool BNO08x::getSensorEvent(sh2_SensorValue_t *value)
 {
-    _sensor_value = value;
+    m_SensorValue = value;
     value->timestamp = 0;
 
     sh2_service();
@@ -228,7 +245,7 @@ bool BNO08x::_init()
     hardwareReset();
 
     // Open SH2 interface (also registers non-sensor event handler.)
-    status = sh2_open(&_hal, hal_callback, this);
+    status = sh2_open(&m_Hal, hal_callback, this);
     if (status != SH2_OK)
     {
         return false;
@@ -248,54 +265,73 @@ bool BNO08x::_init()
     return true;
 }
 
-int BNO08x::hal_open(sh2_Hal_t *self)
+int BNO08x::hal_open()
 {
     uint8_t softreset_pkt[] = {5, 0, 1, 0, 1};
-    int ret = write(dev_fd, softreset_pkt, 5);
-    if (ret != 5)
+    bool success = false;
+
+    // Reset the initial advertisement data state
+    m_InitialAdvertLen = 0;
+    m_InitialAdvertConsumed = false;
+
+    // Implement Adafruit-style retry mechanism for initialization only
+    for (uint8_t attempts = 0; attempts < 5; attempts++)
+    {
+        int ret = write(m_DevFd, softreset_pkt, 5);
+        if (ret == 5)
+        {
+            success = true;
+            break;
+        }
+        usleep(30000); // 30ms delay between attempts (matching Adafruit approach)
+    }
+
+    if (!success)
     {
         return -1;
     }
-    usleep(300000);
+
+    // Wait for sensor to be ready and send advertisement data
+    usleep(500000); // 500ms delay to match our successful test
+
+    // Now immediately read the advertisement data (like our successful enhanced test)
+    m_InitialAdvertLen = read(m_DevFd, m_InitialAdvertData, sizeof(m_InitialAdvertData));
+
     return 0;
 }
 
-void BNO08x::hal_close(sh2_Hal_t *self)
+void BNO08x::hal_close()
 {
-    if (dev_fd != -1)
+    if (m_DevFd != -1)
     {
-        close(dev_fd);
-        dev_fd = -1;
+        close(m_DevFd);
+        m_DevFd = -1;
     }
 }
 
-int BNO08x::hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us)
+int BNO08x::hal_read(uint8_t *pBuffer, unsigned len, uint32_t *t_us)
 {
-    BNO08x *bno08x = (BNO08x *)self;
-    if (bno08x->_mode == MODE_I2C)
+    if (m_Mode == MODE_I2C)
     {
-        uint8_t header[4];
-        if (read(dev_fd, header, 4) != 4)
+        if (!m_InitialAdvertConsumed && m_InitialAdvertLen > 0)
+        {
+            size_t copy_len = (m_InitialAdvertLen < len) ? m_InitialAdvertLen : len;
+            memcpy(pBuffer, m_InitialAdvertData, copy_len);
+            m_InitialAdvertConsumed = true;
+            *t_us = hal_getTimeUs();
+            return copy_len;
+        }
+
+        ssize_t result = read(m_DevFd, pBuffer, len);
+        if (result > 0)
+        {
+            *t_us = hal_getTimeUs();
+            return result;
+        }
+        else
         {
             return 0;
         }
-
-        uint16_t packet_size = (uint16_t)header[0] | (uint16_t)header[1] << 8;
-        packet_size &= ~0x8000;
-
-        if (packet_size > len)
-        {
-            return 0;
-        }
-
-        if (read(dev_fd, pBuffer, packet_size) != packet_size)
-        {
-            return 0;
-        }
-
-        *t_us = hal_getTimeUs(self);
-
-        return packet_size;
     }
     else     // MODE_SPI
     {
@@ -306,7 +342,7 @@ int BNO08x::hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *
         xfer.tx_buf = (unsigned long)NULL;
         xfer.rx_buf = (unsigned long)header;
         xfer.len = 4;
-        if (ioctl(dev_fd, SPI_IOC_MESSAGE(1), &xfer) < 0)
+        if (ioctl(m_DevFd, SPI_IOC_MESSAGE(1), &xfer) < 0)
         {
             return 0;
         }
@@ -322,27 +358,27 @@ int BNO08x::hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *
         xfer.tx_buf = (unsigned long)NULL;
         xfer.rx_buf = (unsigned long)pBuffer;
         xfer.len = packet_size;
-        if (ioctl(dev_fd, SPI_IOC_MESSAGE(1), &xfer) < 0)
+        if (ioctl(m_DevFd, SPI_IOC_MESSAGE(1), &xfer) < 0)
         {
             return 0;
         }
 
-        *t_us = hal_getTimeUs(self);
+        *t_us = hal_getTimeUs();
 
         return packet_size;
     }
 }
 
-int BNO08x::hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len)
+int BNO08x::hal_write(uint8_t *pBuffer, unsigned len)
 {
-    BNO08x *bno08x = (BNO08x *)self;
-    if (bno08x->_mode == MODE_I2C)
+    if (m_Mode == MODE_I2C)
     {
-        int ret = write(dev_fd, pBuffer, len);
+        int ret = write(m_DevFd, pBuffer, len);
         if (ret != len)
         {
             return 0;
         }
+        usleep(1000); // Add a small delay after write
         return ret;
     }
     else     // MODE_SPI
@@ -353,7 +389,7 @@ int BNO08x::hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len)
         xfer.tx_buf = (unsigned long)pBuffer;
         xfer.rx_buf = (unsigned long)NULL;
         xfer.len = len;
-        if (ioctl(dev_fd, SPI_IOC_MESSAGE(1), &xfer) < 0)
+        if (ioctl(m_DevFd, SPI_IOC_MESSAGE(1), &xfer) < 0)
         {
             return 0;
         }
@@ -361,7 +397,7 @@ int BNO08x::hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len)
     }
 }
 
-uint32_t BNO08x::hal_getTimeUs(sh2_Hal_t *self)
+uint32_t BNO08x::hal_getTimeUs()
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -374,7 +410,7 @@ void BNO08x::hal_callback(void *cookie, sh2_AsyncEvent_t *pEvent)
     // If we see a reset, set a flag so that sensors will be reconfigured.
     if (pEvent->eventId == SH2_RESET)
     {
-        self->_reset_occurred = true;
+        self->m_ResetOccurred = true;
     }
 }
 
@@ -384,11 +420,11 @@ void BNO08x::sensorHandler(void *cookie, sh2_SensorEvent_t *event)
     BNO08x *self = (BNO08x *)cookie;
     int rc;
 
-    rc = sh2_decodeSensorEvent(self->_sensor_value, event);
+    rc = sh2_decodeSensorEvent(self->m_SensorValue, event);
     if (rc != SH2_OK)
     {
         // Error decoding sensor event
-        self->_sensor_value->timestamp = 0;
+        self->m_SensorValue->timestamp = 0;
         return;
     }
 }

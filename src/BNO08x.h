@@ -19,15 +19,30 @@
 #include "sh2.h"
 #include "sh2_SensorValue.h"
 #include "sh2_hal.h"
+#include <stdexcept>
+#include <string>
+
+class BNO08x_exception : public std::runtime_error
+{
+    public:
+        BNO08x_exception(const std::string &message) : std::runtime_error(message) {}
+};
 
 class BNO08x
 {
+        // Friend functions to allow C-style callbacks to access private members
+        friend int hal_open_wrapper(sh2_Hal_t *self);
+        friend void hal_close_wrapper(sh2_Hal_t *self);
+        friend int hal_read_wrapper(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us);
+        friend int hal_write_wrapper(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len);
+        friend uint32_t hal_getTimeUs_wrapper(sh2_Hal_t *self);
+
     public:
         /**
          * @brief Construct a new BNO08x object
          * @param reset_pin The GPIO pin number for the reset pin. -1 if not used.
          */
-        BNO08x(int reset_pin = -1);
+        explicit BNO08x(int reset_pin = -1);
 
         /**
          * @brief Destroy the BNO08x object
@@ -38,18 +53,16 @@ class BNO08x
          * @brief Initialize the BNO08x with I2C communication.
          * @param i2c_addr The I2C address of the BNO08x.
          * @param i2c_bus The I2C bus device path.
-         * @return true if initialization was successful, false otherwise.
          */
-        bool begin_i2c(uint8_t i2c_addr = 0x4A, const char* i2c_bus = "/dev/i2c-1");
+        void begin_i2c(uint8_t i2c_addr = 0x4A, const char* i2c_bus = "/dev/i2c-1");
 
         /**
          * @brief Initialize the BNO08x with SPI communication.
          * @param spi_device The SPI device path.
          * @param cs_pin The GPIO pin number for the chip select pin. -1 if not used.
          * @param int_pin The GPIO pin number for the interrupt pin. -1 if not used.
-         * @return true if initialization was successful, false otherwise.
          */
-        bool begin_spi(const char* spi_device = "/dev/spidev0.0", int cs_pin = -1, int int_pin = -1);
+        void begin_spi(const char* spi_device = "/dev/spidev0.0", int cs_pin = -1, int int_pin = -1);
 
         /**
          * @brief Perform a hardware reset of the BNO08x.
@@ -60,7 +73,7 @@ class BNO08x
          * @brief Check if a reset has occurred.
          * @return true if a reset has occurred, false otherwise.
          */
-        bool wasReset();
+        [[nodiscard]] bool wasReset();
 
         /**
          * @brief Enable a sensor report.
@@ -68,14 +81,14 @@ class BNO08x
          * @param interval_us The interval in microseconds between reports.
          * @return true if the report was enabled successfully, false otherwise.
          */
-        bool enableReport(sh2_SensorId_t sensor, uint32_t interval_us = 10000);
+        [[nodiscard]] bool enableReport(sh2_SensorId_t sensor, uint32_t interval_us = 10000);
 
         /**
          * @brief Get a sensor event.
          * @param value A pointer to a sh2_SensorValue_t struct to store the event data.
          * @return true if a new event was received, false otherwise.
          */
-        bool getSensorEvent(sh2_SensorValue_t *value);
+        [[nodiscard]] bool getSensorEvent(sh2_SensorValue_t *value);
 
         /**
          * @brief The product IDs of the BNO08x.
@@ -88,24 +101,30 @@ class BNO08x
             MODE_I2C,
             MODE_SPI
         };
-        comm_mode _mode;
+        comm_mode m_Mode;
 
         bool _init();
-        sh2_Hal_t _hal;
-        int _reset_pin;
-        int _cs_pin;
-        int _int_pin;
-        bool _reset_occurred;
-        sh2_SensorValue_t *_sensor_value;
+        sh2_Hal_t m_Hal;
+        int m_ResetPin;
+        int m_CsPin;
+        int m_IntPin;
+        bool m_ResetOccurred;
+        sh2_SensorValue_t *m_SensorValue;
+        uint8_t m_I2cAddr; // Store the I2C address
 
-        // HAL function pointers
-        static int hal_open(sh2_Hal_t *self);
-        static void hal_close(sh2_Hal_t *self);
-        static int hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us);
-        static int hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len);
-        static uint32_t hal_getTimeUs(sh2_Hal_t *self);
+        // Advertisement data storage for proper initialization
+        uint8_t m_InitialAdvertData[512];
+        int m_InitialAdvertLen;
+        bool m_InitialAdvertConsumed;
+        int m_DevFd; // Device file descriptor (per instance)
+
+        // HAL functions
+        int hal_open();
+        void hal_close();
+        int hal_read(uint8_t *pBuffer, unsigned len, uint32_t *t_us);
+        int hal_write(uint8_t *pBuffer, unsigned len);
+        uint32_t hal_getTimeUs();
 
         static void hal_callback(void *cookie, sh2_AsyncEvent_t *pEvent);
         static void sensorHandler(void *cookie, sh2_SensorEvent_t *pEvent);
 };
-

@@ -36,17 +36,20 @@ This library supports both I2C and SPI communication with the BNO08x.
 
 To initialize the sensor using I2C, use the `begin_i2c` method. The default I2C address is `0x4A`, but you can specify a different address.
 
+The initialization methods (`begin_i2c` and `begin_spi`) will throw a `BNO08x_exception` if they fail. You should wrap the initialization in a `try...catch` block to handle any errors.
+
 ```cpp
 #include <BNO08x.h>
 #include <iostream>
 
 int main() {
     BNO08x imu;
-    // The default I2C address is 0x4A. Use 0x4B if the DI pin is pulled high.
-    if (imu.begin_i2c(0x4A)) {
+    try {
+        // The default I2C address is 0x4A. Use 0x4B if the DI pin is pulled high.
+        imu.begin_i2c();
         std::cout << "BNO08x found!" << std::endl;
-    } else {
-        std::cerr << "BNO08x not found" << std::endl;
+    } catch (const BNO08x_exception &e) {
+        std::cerr << "BNO08x not found: " << e.what() << std::endl;
     }
     return 0;
 }
@@ -62,11 +65,12 @@ To initialize the sensor using SPI, use the `begin_spi` method:
 
 int main() {
     BNO08x imu;
-    // arguments are (spi_device, cs_pin, int_pin)
-    if (imu.begin_spi("/dev/spidev0.0", 5, 6)) {
+    try {
+        // arguments are (spi_device, cs_pin, int_pin)
+        imu.begin_spi();
         std::cout << "BNO08x found!" << std::endl;
-    } else {
-        std::cerr << "BNO08x not found" << std::endl;
+    } catch (const BNO08x_exception &e) {
+        std::cerr << "BNO08x not found: " << e.what() << std::endl;
     }
     return 0;
 }
@@ -170,4 +174,4 @@ For a complete list of sensors, please refer to the `sh2_SensorId_e` enum in `sr
 
 ## License
 
-This project is licensed under the terms of the MIT license. See the `license.txt` file for details.
+This project is licensed under the terms of the BSD license. See the `license.txt` file for details.

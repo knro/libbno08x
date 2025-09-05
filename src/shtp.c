@@ -763,7 +763,9 @@ uint8_t shtp_chanNo(void *pInstance,
             break;
         }
     }
-    if (guid == 0xFFFFFFFF) return -1;
+    if (guid == 0xFFFFFFFF) {
+        return 0xFF; // Return 0xFF instead of -1 as it's an unsigned char
+    }
 
     for (chan = 0; chan < SH2_MAX_CHANS; chan++) {
         if ((strcmp(pShtp->chan[chan].chanName, chanName) == 0) &&

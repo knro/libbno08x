@@ -1511,7 +1511,6 @@ static void setCalConfigRx(sh2_t *pSh2, const uint8_t *payload, uint16_t len)
         status = SH2_ERR_HUB;
     }
 
-    // Complete this operation
     opCompleted(pSh2, status);
 }
 
