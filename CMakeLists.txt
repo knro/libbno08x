@@ -10,14 +10,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(GPIOD REQUIRED)
 
 if (LIBGPIOD_VERSION VERSION_GREATER_EQUAL "2.0")
-  add_definitions(-DHAVE_LIBGPIOD_V2)
+  set(HAVE_LIBGPIOD_V2 1)
 endif()
+
+configure_file(src/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h @ONLY)
 
 # Add the library source files
 add_library(bno08x SHARED src/BNO08x.cpp src/sh2.c src/shtp.c src/sh2_SensorValue.c src/sh2_util.c)
 
 target_include_directories(bno08x PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/bno08x>
 )
 

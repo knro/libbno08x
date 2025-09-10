@@ -16,6 +16,7 @@
 
 #include "BNO08x.h"
 #include "sh2_err.h"
+#include "config.h"
 #include <iostream>
 #include <cstring>
 #include <ctime>
