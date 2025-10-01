@@ -1,0 +1,26 @@
+Source: libbno08x
+Priority: optional
+Maintainer: Dušan Poizl <nou@nouspiro.space>
+Build-Depends: debhelper (>= 9),
+              cdbs,
+              cmake,
+              pkg-config,
+              libgpiod-dev
+Standards-Version: 4.5.0
+Section: libs
+Homepage: https://github.com/knro/libbno08x
+Vcs-Git: https://github.com/knro/libbno08x.git
+
+Package: libbno08x-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: libbno08x (= ${binary:Version}), ${misc:Depends}
+Description: Library for BNO08x IMU development files
+
+Package: libbno08x
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Conflicts: libbno08x0
+Description: Library for BNO08x IMU
